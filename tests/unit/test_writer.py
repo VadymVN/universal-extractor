@@ -2,6 +2,7 @@
 
 
 import pytest
+
 from universal_extractor.core.base import ExtractionResult
 from universal_extractor.output.report import BatchReport
 from universal_extractor.output.writer import OutputWriter

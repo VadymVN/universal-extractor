@@ -4,6 +4,7 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from universal_extractor.core.base import ExtractionError
 from universal_extractor.extractors.webpage import WebPageExtractor
 

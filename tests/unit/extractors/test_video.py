@@ -4,6 +4,7 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from universal_extractor.core.base import ExtractionError
 from universal_extractor.extractors.video import VideoExtractor, _get_device
 
