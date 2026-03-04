@@ -34,6 +34,18 @@ def register_all(registry: ExtractorRegistry) -> None:
         logger.debug("YouTubeExtractor unavailable (missing dependencies)")
 
     try:
+        from .pptx import PptxExtractor
+        registry.register(PptxExtractor())
+    except ImportError:
+        logger.debug("PptxExtractor unavailable (missing python-pptx)")
+
+    try:
+        from .xlsx import XlsxExtractor
+        registry.register(XlsxExtractor())
+    except ImportError:
+        logger.debug("XlsxExtractor unavailable (missing openpyxl)")
+
+    try:
         from .video import VideoExtractor
         registry.register(VideoExtractor())
     except ImportError:

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from .config import Config
-from .core.base import ExtractionError
+from .core.base import ExtractionError, ExtractionResult
 from .core.registry import ExtractorRegistry
 from .core.router import InputRouter
 from .extractors import register_all
@@ -23,12 +23,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-i", "--input",
-        help="Input file, directory, or URL",
+        help="Input file, directory, or URL. Use '-' for stdin.",
     )
     parser.add_argument(
         "-o", "--output",
         default="output",
-        help="Output directory (default: ./output/)",
+        help="Output directory (default: ./output/). Use '-' for stdout.",
     )
     parser.add_argument(
         "-b", "--batch",
@@ -138,6 +138,53 @@ def dry_run(source: str, registry: ExtractorRegistry) -> None:
     print(f"  Source not found: {source}")
 
 
+def _read_stdin() -> str:
+    """Read all content from stdin."""
+    return sys.stdin.buffer.read().decode("utf-8")
+
+
+def _handle_stdin() -> ExtractionResult:
+    """Create ExtractionResult from stdin content."""
+    text = _read_stdin()
+    if not text.strip():
+        raise ExtractionError("Empty input from stdin", source="stdin")
+    return ExtractionResult(
+        text=text,
+        source="stdin",
+        source_type="plaintext",
+        extractor_name="stdin",
+    )
+
+
+def _render_result(result: ExtractionResult, fmt: str) -> str:
+    """Render an ExtractionResult to a string for stdout output."""
+    if fmt == "json":
+        return result.to_json()
+    if fmt == "txt":
+        return result.to_header() + "\n\n" + result.text
+    # md (default): prefer markdown_text if available
+    body = result.markdown_text or result.text
+    return result.to_header() + "\n\n" + body
+
+
+def _is_stdin_mode(args: argparse.Namespace) -> bool:
+    """Check if we should read from stdin."""
+    return args.input == "-" or (args.input is None and not sys.stdin.isatty())
+
+
+def _is_stdout_mode(args: argparse.Namespace) -> bool:
+    """Check if we should write to stdout."""
+    return args.output == "-"
+
+
+def _status(msg: str, stdout_mode: bool) -> None:
+    """Print a status message to stderr when in stdout mode, else to stdout."""
+    if stdout_mode:
+        print(msg, file=sys.stderr)
+    else:
+        print(msg)
+
+
 def run(args: argparse.Namespace) -> int:
     """Main execution logic."""
     config_kwargs = {}
@@ -153,16 +200,41 @@ def run(args: argparse.Namespace) -> int:
     log_level = "DEBUG" if args.verbose else config.log_level
     setup_logging(log_level)
 
+    stdin_mode = _is_stdin_mode(args)
+    stdout_mode = _is_stdout_mode(args)
+
     # Build registry and router
     registry = ExtractorRegistry()
     register_all(registry)
     router = InputRouter(registry)
-    writer = OutputWriter(args.output, fmt=args.format)
+
+    writer = None
+    if not stdout_mode:
+        writer = OutputWriter(args.output, fmt=args.format)
+
     report = BatchReport()
+
+    # Stdin mode
+    if stdin_mode:
+        try:
+            result = _handle_stdin()
+        except ExtractionError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+
+        if stdout_mode:
+            sys.stdout.write(_render_result(result, args.format))
+        else:
+            assert writer is not None
+            path = writer.write(result)
+            _status(f"Extracted: {result.source}", stdout_mode)
+            _status(f"Type: {result.source_type} | Characters: {result.char_count:,}", stdout_mode)
+            _status(f"Saved to: {path}", stdout_mode)
+        return 0
 
     source = args.input
 
-    # Interactive mode if no input
+    # Interactive mode if no input and stdin is a TTY
     if not source:
         source, output_dir = interactive_mode(config)
         writer = OutputWriter(output_dir, fmt=args.format)
@@ -192,7 +264,6 @@ def run(args: argparse.Namespace) -> int:
                 results.append(result)
                 report.add(result)
             except Exception as e:
-                from .core.base import ExtractionResult
                 err_result = ExtractionResult(
                     text="", source=str(file_path), source_type="unknown",
                     extractor_name="none", error=str(e),
@@ -200,17 +271,32 @@ def run(args: argparse.Namespace) -> int:
                 results.append(err_result)
                 report.add(err_result)
 
-        writer.write_batch(results)
-        print(f"\n{report.summary()}")
-        print(f"\nOutput: {writer.output_dir}")
+        if stdout_mode:
+            for result in results:
+                if result.error and not result.text:
+                    continue
+                sys.stdout.write(_render_result(result, args.format) + "\n")
+        else:
+            assert writer is not None
+            writer.write_batch(results)
+        _status(f"\n{report.summary()}", stdout_mode)
+        if not stdout_mode and writer:
+            _status(f"\nOutput: {writer.output_dir}", stdout_mode)
     else:
         # Single file or URL
         try:
             result = router.extract(source)
-            path = writer.write(result)
-            print(f"Extracted: {result.source}")
-            print(f"Type: {result.source_type} | Characters: {result.char_count:,}")
-            print(f"Saved to: {path}")
+            if stdout_mode:
+                sys.stdout.write(_render_result(result, args.format))
+            else:
+                assert writer is not None
+                path = writer.write(result)
+                _status(f"Saved to: {path}", stdout_mode)
+            _status(f"Extracted: {result.source}", stdout_mode)
+            _status(
+                f"Type: {result.source_type} | Characters: {result.char_count:,}",
+                stdout_mode,
+            )
         except ExtractionError as e:
             print(f"Error: {e}", file=sys.stderr)
             return 1

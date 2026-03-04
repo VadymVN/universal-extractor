@@ -9,9 +9,10 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 FIXTURES = PROJECT_ROOT / "tests" / "fixtures"
 
 
-def run_cli(*args: str) -> subprocess.CompletedProcess:
+def run_cli(*args: str, stdin_data: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "universal_extractor", *args],
+        input=stdin_data,
         capture_output=True,
         text=True,
         cwd=str(PROJECT_ROOT),
@@ -90,3 +91,15 @@ class TestCLI:
         )
         assert result.returncode == 0
         assert "sample text" in result.stdout.lower()
+
+    def test_stdin_to_stdout(self):
+        """Pipe stdin to stdout."""
+        result = run_cli("-i", "-", "-o", "-", "-f", "txt", stdin_data="piped text")
+        assert result.returncode == 0
+        assert "piped text" in result.stdout
+
+    def test_file_to_stdout(self):
+        """Read from file, write to stdout."""
+        result = run_cli("-i", str(FIXTURES / "sample.txt"), "-o", "-")
+        assert result.returncode == 0
+        assert "sample" in result.stdout.lower()

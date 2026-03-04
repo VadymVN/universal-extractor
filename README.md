@@ -1,6 +1,6 @@
 # Universal Extractor
 
-Extract text from any file or URL — PDF, DOCX, video/audio, YouTube, web pages.
+Extract text from any file or URL — PDF, DOCX, PPTX, XLSX, video/audio, YouTube, web pages.
 
 A single, extensible tool that replaces per-project extraction scripts with a unified CLI and Python library.
 
@@ -8,10 +8,13 @@ A single, extensible tool that replaces per-project extraction scripts with a un
 
 - **PDF** extraction via pdfplumber
 - **DOCX** extraction via python-docx
+- **PPTX** extraction via python-pptx (slides, tables, bullet lists)
+- **XLSX** extraction via openpyxl (multiple sheets, tables)
 - **Plain text** with automatic encoding detection (UTF-8 → chardet → latin-1)
 - **Web pages** via trafilatura
 - **YouTube** transcripts with 3-tier fallback (transcript API → yt-dlp subs → Whisper)
 - **Video/Audio** transcription via OpenAI Whisper (MPS/CUDA/CPU auto-detection)
+- **Pipe support** — read from stdin (`-i -`) and write to stdout (`-o -`)
 - YAML-style metadata headers in output files
 - Batch processing with progress bars
 - Dry-run mode for previewing
@@ -53,14 +56,20 @@ uniextract --list-extractors
 
 # Interactive mode (prompts for input)
 uniextract
+
+# Pipe support (stdin/stdout)
+echo "some text" | uniextract -i - -o - -f txt
+echo "some text" | uniextract -i - -o - -f json
+uniextract -i document.pdf -o -
+cat document.txt | uniextract -o -
 ```
 
 ### Options
 
 | Flag | Description |
 |------|-------------|
-| `-i, --input` | Input file, directory, or URL |
-| `-o, --output` | Output directory (default: `./output/`) |
+| `-i, --input` | Input file, directory, or URL. Use `-` for stdin |
+| `-o, --output` | Output directory (default: `./output/`). Use `-` for stdout |
 | `-f, --format` | Output format: `md` (default), `txt`, `json` |
 | `-b, --batch` | Force batch mode for directory input |
 | `--whisper-model` | Whisper model: tiny, base, small, medium, large |

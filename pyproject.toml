@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "universal-extractor"
-version = "0.1.0"
+version = "0.2.0"
 description = "Extract text from any file or URL — PDF, DOCX, video/audio, YouTube, web pages"
 readme = "README.md"
 license = "MIT"
@@ -12,7 +12,7 @@ requires-python = ">=3.11"
 authors = [
     {name = "VadymVN"},
 ]
-keywords = ["text-extraction", "pdf", "docx", "whisper", "youtube", "transcription"]
+keywords = ["text-extraction", "pdf", "docx", "pptx", "xlsx", "whisper", "youtube", "transcription"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -29,6 +29,8 @@ dependencies = [
     "requests>=2.28.0",
     "tqdm>=4.64.0",
     "chardet>=5.0.0",
+    "python-pptx>=0.6.21",
+    "openpyxl>=3.1.0",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +45,7 @@ dev = [
     "pytest-cov>=4.0",
     "ruff>=0.15.0",
     "mypy>=1.0",
+    "build>=1.0.0",
 ]
 
 [project.scripts]
