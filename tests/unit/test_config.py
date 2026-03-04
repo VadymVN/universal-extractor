@@ -47,3 +47,12 @@ class TestConfig:
         cfg = Config(web_timeout=0)
         errors = cfg.validate()
         assert any("web_timeout" in e for e in errors)
+
+    def test_default_output_format(self):
+        cfg = Config()
+        assert cfg.output_format == "md"
+
+    def test_validate_bad_output_format(self):
+        cfg = Config(output_format="xml")
+        errors = cfg.validate()
+        assert any("output_format" in e for e in errors)

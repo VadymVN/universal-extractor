@@ -23,9 +23,10 @@ class TestWebPageExtractor:
     def test_extract_mocked(self):
         mock_trafilatura = MagicMock()
         mock_trafilatura.fetch_url.return_value = "<html><body>Hello world</body></html>"
-        # First call returns text, second call returns JSON metadata
+        # First call: plain text, second: markdown, third: JSON metadata
         mock_trafilatura.extract.side_effect = [
             "Hello world extracted text",
+            "# Hello world markdown",
             '{"title": "Test Page", "author": "Test Author"}',
         ]
 
@@ -33,6 +34,7 @@ class TestWebPageExtractor:
             result = self.ext.extract("https://example.com/article")
 
         assert result.text == "Hello world extracted text"
+        assert result.markdown_text == "# Hello world markdown"
         assert result.source_type == "webpage"
         assert result.metadata.get("Title") == "Test Page"
 

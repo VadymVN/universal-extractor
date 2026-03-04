@@ -61,6 +61,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="List all available extractors and exit",
     )
     parser.add_argument(
+        "-f", "--format",
+        choices=["md", "txt", "json"],
+        default="md",
+        help="Output format: md (default), txt, or json",
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable verbose logging",
@@ -151,7 +157,7 @@ def run(args: argparse.Namespace) -> int:
     registry = ExtractorRegistry()
     register_all(registry)
     router = InputRouter(registry)
-    writer = OutputWriter(args.output)
+    writer = OutputWriter(args.output, fmt=args.format)
     report = BatchReport()
 
     source = args.input
@@ -159,7 +165,7 @@ def run(args: argparse.Namespace) -> int:
     # Interactive mode if no input
     if not source:
         source, output_dir = interactive_mode(config)
-        writer = OutputWriter(output_dir)
+        writer = OutputWriter(output_dir, fmt=args.format)
 
     # Dry run
     if args.dry_run:

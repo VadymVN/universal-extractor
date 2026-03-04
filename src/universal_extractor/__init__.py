@@ -55,12 +55,14 @@ def extract_batch(
     return router.extract_directory(directory)
 
 
-def save_result(result: ExtractionResult, output_dir: str = "output") -> Path:
+def save_result(
+    result: ExtractionResult, output_dir: str = "output", fmt: str = "md"
+) -> Path:
     """Save an extraction result to a file.
 
     >>> from universal_extractor import extract, save_result
     >>> result = extract("document.pdf")
     >>> path = save_result(result, "output/")
     """
-    writer = OutputWriter(output_dir)
+    writer = OutputWriter(output_dir, fmt=fmt)
     return writer.write(result)

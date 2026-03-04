@@ -62,6 +62,15 @@ class WebPageExtractor(BaseExtractor):
                 f"Could not extract text from {source}", source=source
             )
 
+        # Extract markdown version
+        markdown_text = trafilatura.extract(
+            downloaded,
+            output_format="markdown",
+            include_comments=False,
+            include_tables=True,
+            no_fallback=False,
+        )
+
         # Try to get metadata
         metadata: dict = {}
         try:
@@ -86,4 +95,5 @@ class WebPageExtractor(BaseExtractor):
             source_type="webpage",
             extractor_name=self.__class__.__name__,
             metadata=metadata,
+            markdown_text=markdown_text or None,
         )

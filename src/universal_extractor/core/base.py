@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -31,6 +32,7 @@ class ExtractionResult:
     language: str | None = None
     char_count: int = 0
     error: str | None = None
+    markdown_text: str | None = None
 
     def __post_init__(self) -> None:
         if self.char_count == 0 and self.text:
@@ -54,6 +56,24 @@ class ExtractionResult:
 
         lines.append("---")
         return "\n".join(lines)
+
+    def to_json(self) -> str:
+        """Serialize result to JSON."""
+        data: dict[str, Any] = {
+            "source": self.source,
+            "source_type": self.source_type,
+            "extractor_name": self.extractor_name,
+            "extracted_at": self.extracted_at.strftime("%Y-%m-%dT%H:%M:%S"),
+            "language": self.language,
+            "char_count": self.char_count,
+            "metadata": self.metadata,
+            "text": self.text,
+        }
+        if self.markdown_text is not None:
+            data["markdown_text"] = self.markdown_text
+        if self.error:
+            data["error"] = self.error
+        return json.dumps(data, ensure_ascii=False, indent=2)
 
 
 class BaseExtractor(ABC):

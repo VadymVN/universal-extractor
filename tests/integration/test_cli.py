@@ -1,5 +1,6 @@
 """Integration tests for the CLI."""
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -32,8 +33,8 @@ class TestCLI:
         result = run_cli("-i", str(FIXTURES / "sample.txt"), "-o", str(tmp_path))
         assert result.returncode == 0
         assert "Extracted:" in result.stdout
-        # Check output file was created
-        output_files = list(tmp_path.glob("*.txt"))
+        # Default format is now .md
+        output_files = list(tmp_path.glob("*.md"))
         assert len(output_files) == 1
         content = output_files[0].read_text()
         assert "sample text file" in content
@@ -42,8 +43,29 @@ class TestCLI:
         result = run_cli("-i", str(FIXTURES), "-o", str(tmp_path))
         assert result.returncode == 0
         assert "Processed:" in result.stdout
-        output_files = list(tmp_path.glob("*.txt"))
+        output_files = list(tmp_path.glob("*.md"))
         assert len(output_files) >= 2  # sample.txt and sample.md at minimum
+
+    def test_extract_txt_format(self, tmp_path):
+        result = run_cli(
+            "-i", str(FIXTURES / "sample.txt"), "-o", str(tmp_path), "--format", "txt"
+        )
+        assert result.returncode == 0
+        output_files = list(tmp_path.glob("*.txt"))
+        assert len(output_files) == 1
+        content = output_files[0].read_text()
+        assert content.startswith("---")
+
+    def test_extract_json_format(self, tmp_path):
+        result = run_cli(
+            "-i", str(FIXTURES / "sample.txt"), "-o", str(tmp_path), "--format", "json"
+        )
+        assert result.returncode == 0
+        output_files = list(tmp_path.glob("*.json"))
+        assert len(output_files) == 1
+        data = json.loads(output_files[0].read_text())
+        assert "text" in data
+        assert "source" in data
 
     def test_dry_run(self):
         result = run_cli("--dry-run", "-i", str(FIXTURES))

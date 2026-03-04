@@ -1,5 +1,6 @@
 """Tests for OutputWriter and BatchReport."""
 
+import json
 
 import pytest
 
@@ -25,6 +26,50 @@ def sample_result():
 
 
 class TestOutputWriter:
+    def test_default_format_md(self, tmp_path, sample_result):
+        writer = OutputWriter(str(tmp_path))
+        path = writer.write(sample_result)
+        assert path.suffix == ".md"
+        content = path.read_text()
+        assert "Hello world" in content
+        assert "Source: /path/to/document.pdf" in content
+
+    def test_format_txt(self, tmp_path, sample_result):
+        writer = OutputWriter(str(tmp_path), fmt="txt")
+        path = writer.write(sample_result)
+        assert path.suffix == ".txt"
+        content = path.read_text()
+        assert content.startswith("---")
+        assert "Hello world" in content
+
+    def test_format_json(self, tmp_path, sample_result):
+        writer = OutputWriter(str(tmp_path), fmt="json")
+        path = writer.write(sample_result)
+        assert path.suffix == ".json"
+        data = json.loads(path.read_text())
+        assert data["text"] == "Hello world"
+        assert data["source"] == "/path/to/document.pdf"
+
+    def test_md_uses_markdown_text(self, tmp_path):
+        result = ExtractionResult(
+            text="plain text",
+            source="doc.pdf",
+            source_type="pdf",
+            extractor_name="PDFExtractor",
+            markdown_text="# Markdown heading",
+        )
+        writer = OutputWriter(str(tmp_path), fmt="md")
+        path = writer.write(result)
+        content = path.read_text()
+        assert "# Markdown heading" in content
+        assert "plain text" not in content
+
+    def test_md_fallback_to_text(self, tmp_path, sample_result):
+        writer = OutputWriter(str(tmp_path), fmt="md")
+        path = writer.write(sample_result)
+        content = path.read_text()
+        assert "Hello world" in content
+
     def test_write_creates_file(self, tmp_output, sample_result):
         path = tmp_output.write(sample_result)
         assert path.exists()

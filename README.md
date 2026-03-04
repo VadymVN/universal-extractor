@@ -61,6 +61,7 @@ uniextract
 |------|-------------|
 | `-i, --input` | Input file, directory, or URL |
 | `-o, --output` | Output directory (default: `./output/`) |
+| `-f, --format` | Output format: `md` (default), `txt`, `json` |
 | `-b, --batch` | Force batch mode for directory input |
 | `--whisper-model` | Whisper model: tiny, base, small, medium, large |
 | `--language` | Language hint for transcription |
@@ -84,8 +85,12 @@ results = extract_batch("./documents/")
 for r in results:
     print(f"{r.source}: {r.char_count} chars")
 
-# Save with metadata header
+# Save with metadata header (default: markdown)
 save_result(result, "output/")
+
+# Save as plain text or JSON
+save_result(result, "output/", fmt="txt")
+save_result(result, "output/", fmt="json")
 
 # Custom config
 from universal_extractor import Config
@@ -94,7 +99,22 @@ result = extract("video.mp4", config=Config(whisper_model="medium"))
 
 ## Output Format
 
-Each file is saved as `.txt` with a YAML-style metadata header:
+Default output is **Markdown** (`.md`). Use `--format txt` or `--format json` for alternatives.
+
+Extractors that support rich formatting (web pages, DOCX, PDF with tables) produce Markdown natively. Others fall back to plain text.
+
+```bash
+# Markdown (default)
+uniextract -i document.pdf
+
+# Plain text
+uniextract -i document.pdf --format txt
+
+# JSON
+uniextract -i document.pdf --format json
+```
+
+Markdown and text files include a YAML frontmatter header:
 
 ```
 ---
@@ -107,7 +127,7 @@ Pages: 12
 Author: John Doe
 ---
 
-[extracted text here]
+[extracted content here]
 ```
 
 ## Configuration
@@ -124,6 +144,7 @@ Settings can be passed via constructor, environment variables, or defaults:
 | `UNIEXTRACT_MAX_WORKERS` | `4` | Max parallel workers |
 | `UNIEXTRACT_LOG_LEVEL` | `INFO` | Logging level |
 | `UNIEXTRACT_OUTPUT_DIR` | `output` | Default output directory |
+| `UNIEXTRACT_OUTPUT_FORMAT` | `md` | Output format: `md`, `txt`, `json` |
 
 ## Development
 

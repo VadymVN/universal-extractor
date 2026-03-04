@@ -22,6 +22,7 @@ class Config:
     max_workers: int = 4
     log_level: str = "INFO"
     output_dir: str = "output"
+    output_format: str = "md"
 
     @classmethod
     def from_env(cls, **overrides: object) -> Config:
@@ -34,6 +35,7 @@ class Config:
             "max_workers": ("UNIEXTRACT_MAX_WORKERS", int),
             "log_level": ("UNIEXTRACT_LOG_LEVEL", str),
             "output_dir": ("UNIEXTRACT_OUTPUT_DIR", str),
+            "output_format": ("UNIEXTRACT_OUTPUT_FORMAT", str),
         }
 
         kwargs: dict[str, object] = {}
@@ -68,4 +70,10 @@ class Config:
             errors.append(f"web_timeout must be >= 1, got {self.web_timeout}")
         if self.max_workers < 1:
             errors.append(f"max_workers must be >= 1, got {self.max_workers}")
+        valid_formats = {"md", "txt", "json"}
+        if self.output_format not in valid_formats:
+            errors.append(
+                f"Invalid output_format '{self.output_format}'. "
+                f"Must be one of: {', '.join(sorted(valid_formats))}"
+            )
         return errors
