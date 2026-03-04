@@ -78,7 +78,7 @@ def interactive_mode(config: Config) -> tuple[str, str]:
         print("No input provided. Exiting.")
         sys.exit(0)
 
-    output = input(f"Output directory [./output/]: ").strip()
+    output = input("Output directory [./output/]: ").strip()
     if not output:
         output = "output"
 
@@ -194,7 +194,7 @@ def run(args: argparse.Namespace) -> int:
                 results.append(err_result)
                 report.add(err_result)
 
-        paths = writer.write_batch(results)
+        writer.write_batch(results)
         print(f"\n{report.summary()}")
         print(f"\nOutput: {writer.output_dir}")
     else:

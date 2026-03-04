@@ -3,9 +3,8 @@
 from pathlib import Path
 
 import pytest
-
-from universal_extractor.extractors.plaintext import PlainTextExtractor
 from universal_extractor.core.base import ExtractionError
+from universal_extractor.extractors.plaintext import PlainTextExtractor
 
 FIXTURES = Path(__file__).parent.parent.parent / "fixtures"
 

@@ -1,6 +1,5 @@
 """Tests for Config."""
 
-import os
 
 from universal_extractor.config import Config
 

@@ -20,7 +20,7 @@ env/
 .DS_Store
 
 # Project-specific
-output/
+/output/
 DEV_NOTES.md
 .env
 

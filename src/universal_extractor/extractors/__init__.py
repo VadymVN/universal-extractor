@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 def register_all(registry: ExtractorRegistry) -> None:
     """Register all available extractors with the registry."""
-    from .plaintext import PlainTextExtractor
-    from .pdf import PDFExtractor
     from .docx import DocxExtractor
+    from .pdf import PDFExtractor
+    from .plaintext import PlainTextExtractor
 
     for extractor_cls in [PlainTextExtractor, PDFExtractor, DocxExtractor]:
         registry.register(extractor_cls())

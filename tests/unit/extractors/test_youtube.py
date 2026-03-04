@@ -4,9 +4,8 @@ import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
-
-from universal_extractor.extractors.youtube import YouTubeExtractor, CircuitBreaker
 from universal_extractor.core.base import ExtractionError
+from universal_extractor.extractors.youtube import CircuitBreaker, YouTubeExtractor
 
 
 class TestCircuitBreaker:
@@ -40,7 +39,8 @@ class TestYouTubeExtractor:
         assert not self.ext.can_handle("video.mp4")
 
     def test_extract_video_id(self):
-        assert self.ext._extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        assert self.ext._extract_video_id(url) == "dQw4w9WgXcQ"
         assert self.ext._extract_video_id("https://youtu.be/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
         assert self.ext._extract_video_id("https://youtube.com/embed/dQw4w9WgXcQ") == "dQw4w9WgXcQ"
 
@@ -70,7 +70,6 @@ class TestYouTubeExtractor:
     def test_all_tiers_fail(self):
         """All tiers fail → ExtractionError."""
         # Ensure no real packages are used
-        mock_empty = MagicMock()
         mock_yt_api = MagicMock()
         mock_yt_api.YouTubeTranscriptApi.list_transcripts.side_effect = Exception("no subs")
 

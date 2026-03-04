@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 
@@ -27,7 +27,7 @@ class ExtractionResult:
     source_type: str
     extractor_name: str
     metadata: dict[str, Any] = field(default_factory=dict)
-    extracted_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    extracted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     language: str | None = None
     char_count: int = 0
     error: str | None = None

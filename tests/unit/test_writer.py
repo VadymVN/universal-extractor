@@ -1,12 +1,10 @@
 """Tests for OutputWriter and BatchReport."""
 
-from pathlib import Path
 
 import pytest
-
 from universal_extractor.core.base import ExtractionResult
-from universal_extractor.output.writer import OutputWriter
 from universal_extractor.output.report import BatchReport
+from universal_extractor.output.writer import OutputWriter
 
 
 @pytest.fixture

@@ -6,9 +6,9 @@ import logging
 import mimetypes
 from pathlib import Path
 
+from ..utils.sanitize import is_url
 from .base import BaseExtractor, ExtractionError, ExtractionResult
 from .registry import ExtractorRegistry
-from ..utils.sanitize import is_url
 
 logger = logging.getLogger(__name__)
 

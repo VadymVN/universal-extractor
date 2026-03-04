@@ -1,10 +1,8 @@
 """Tests for InputRouter."""
 
 from pathlib import Path
-from unittest.mock import MagicMock
 
 import pytest
-
 from universal_extractor.core.base import BaseExtractor, ExtractionError, ExtractionResult
 from universal_extractor.core.registry import ExtractorRegistry
 from universal_extractor.core.router import InputRouter

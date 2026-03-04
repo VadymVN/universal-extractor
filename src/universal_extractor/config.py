@@ -50,7 +50,7 @@ class Config:
         # YouTube languages from comma-separated env var
         yt_langs = os.environ.get("UNIEXTRACT_YOUTUBE_LANGUAGES")
         if yt_langs:
-            kwargs["youtube_languages"] = [l.strip() for l in yt_langs.split(",")]
+            kwargs["youtube_languages"] = [lang.strip() for lang in yt_langs.split(",")]
 
         kwargs.update(overrides)
         return cls(**kwargs)  # type: ignore[arg-type]

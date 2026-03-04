@@ -122,7 +122,10 @@ class VideoExtractor(BaseExtractor):
         return ExtractionResult(
             text=text,
             source=source,
-            source_type="video" if path.suffix in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv"} else "audio",
+            source_type=(
+                "video" if path.suffix in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv"}
+                else "audio"
+            ),
             extractor_name=self.__class__.__name__,
             metadata=metadata,
             language=detected_lang,
