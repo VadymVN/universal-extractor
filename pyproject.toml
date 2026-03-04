@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "universal-extractor"
+version = "0.1.0"
+description = "Extract text from any file or URL — PDF, DOCX, video/audio, YouTube, web pages"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    {name = "VadymVN"},
+]
+keywords = ["text-extraction", "pdf", "docx", "whisper", "youtube", "transcription"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Text Processing",
+]
+
+dependencies = [
+    "pdfplumber>=0.9.0",
+    "python-docx>=0.8.11",
+    "trafilatura>=1.6.0",
+    "requests>=2.28.0",
+    "tqdm>=4.64.0",
+    "chardet>=5.0.0",
+]
+
+[project.optional-dependencies]
+video = [
+    "openai-whisper>=20231117",
+    "torch>=2.0.0",
+    "yt-dlp>=2023.10.13",
+    "youtube-transcript-api>=0.6.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0",
+]
+
+[project.scripts]
+uniextract = "universal_extractor.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/VadymVN/universal-extractor"
+Repository = "https://github.com/VadymVN/universal-extractor"
+Issues = "https://github.com/VadymVN/universal-extractor/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
