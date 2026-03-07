@@ -109,8 +109,8 @@ class TestYouTubeExtractor:
         mock_ydl_instance.extract_info.return_value = {
             "title": "My Playlist",
             "entries": [
-                {"url": "abc123", "webpage_url": "https://www.youtube.com/watch?v=abc123"},
-                {"url": "def456", "webpage_url": "https://www.youtube.com/watch?v=def456"},
+                {"url": "abc123", "title": "Video A"},
+                {"url": "def456", "title": "Video B"},
             ],
         }
 
@@ -119,13 +119,14 @@ class TestYouTubeExtractor:
 
         with patch.dict(sys.modules, {"yt_dlp": mock_yt_dlp}):
             ext = YouTubeExtractor(languages=["en"])
-            title, urls = ext.get_playlist_info(
+            title, videos = ext.get_playlist_info(
                 "https://www.youtube.com/playlist?list=PLxxx"
             )
 
         assert title == "My Playlist"
-        assert len(urls) == 2
-        assert "abc123" in urls[0]
+        assert len(videos) == 2
+        assert "abc123" in videos[0][0]
+        assert videos[0][1] == "Video A"
 
     def test_get_playlist_info_empty(self):
         """Empty playlist raises ExtractionError."""
@@ -161,8 +162,8 @@ class TestYouTubeExtractor:
         with patch.object(ext, "get_playlist_info") as mock_info, \
              patch.object(ext, "extract") as mock_extract:
             mock_info.return_value = ("Test Playlist", [
-                "https://www.youtube.com/watch?v=abc",
-                "https://www.youtube.com/watch?v=def",
+                ("https://www.youtube.com/watch?v=abc", "Vid A"),
+                ("https://www.youtube.com/watch?v=def", "Vid B"),
             ])
             mock_extract.return_value = mock_result
 
@@ -185,7 +186,7 @@ class TestYouTubeExtractor:
 
         with patch.object(ext, "get_playlist_info") as mock_info, \
              patch.object(ext, "extract") as mock_extract:
-            mock_info.return_value = ("PL", ["url1", "url2"])
+            mock_info.return_value = ("PL", [("url1", "T1"), ("url2", "T2")])
             mock_extract.side_effect = [ok_result, Exception("fail")]
 
             title, results = ext.extract_playlist("https://youtube.com/playlist?list=X")

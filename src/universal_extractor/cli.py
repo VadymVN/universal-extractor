@@ -286,7 +286,10 @@ def run(args: argparse.Namespace) -> int:
         # YouTube playlist
         from tqdm import tqdm
 
-        from .extractors.youtube import YouTubeExtractor, _PLAYLIST_DELAY_SECONDS
+        from .extractors.youtube import (
+            _PLAYLIST_DELAY_SECONDS,
+            YouTubeExtractor,
+        )
 
         _status("Fetching playlist info...", stdout_mode)
         yt_extractor = YouTubeExtractor(
@@ -324,7 +327,7 @@ def run(args: argparse.Namespace) -> int:
                     return 1
             else:
                 print(
-                    f"Error: Playlist unavailable (tried cookies from {config.cookies_from_browser})",
+                    f"Error: Playlist unavailable (cookies: {config.cookies_from_browser})",
                     file=sys.stderr,
                 )
                 return 1
@@ -342,11 +345,11 @@ def run(args: argparse.Namespace) -> int:
             if subdir.exists():
                 existing_files = {f.stem for f in subdir.iterdir() if f.is_file()}
 
-        ext = {"md": ".md", "txt": ".txt", "json": ".json"}.get(args.format, ".md")
         skipped = 0
 
         try:
-            for i, (video_url, video_title) in enumerate(tqdm(videos, desc="Transcribing", unit="video")):
+            pbar = tqdm(videos, desc="Transcribing", unit="video")
+            for i, (video_url, video_title) in enumerate(pbar):
                 # Skip if output file already exists
                 if existing_files and video_title:
                     expected_stem = _sanitize(video_title)
