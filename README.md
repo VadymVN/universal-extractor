@@ -49,6 +49,9 @@ uniextract -i "https://youtube.com/watch?v=dQw4w9WgXcQ"
 # YouTube playlist (all videos → output/Playlist_Name/)
 uniextract -i "https://youtube.com/playlist?list=PLxxxxxxx"
 
+# Private playlist (use browser cookies)
+uniextract -i "https://youtube.com/playlist?list=PLxxxxxxx" --cookies chrome
+
 # Web page
 uniextract -i "https://example.com/article"
 
@@ -79,6 +82,7 @@ cat document.txt | uniextract -o -
 | `--whisper-model` | Whisper model: tiny, base, small, medium, large |
 | `--language` | Language hint for transcription |
 | `--no-whisper` | Disable Whisper (skip video/audio) |
+| `--cookies [BROWSER]` | Use browser cookies for private playlists (auto-detect or specify: chrome, firefox, safari) |
 | `--dry-run` | Preview what would be processed |
 | `--list-extractors` | Show available extractors |
 | `-v, --verbose` | Enable debug logging |
@@ -158,9 +162,13 @@ uniextract -i document.pdf -o output/
 # Directory → output/<dir_name>/file1.md, file2.md, ...
 uniextract -i ./lectures/ -o output/
 
-# Playlist → output/<Playlist_Title>/video1.md, video2.md, ...
+# Playlist → output/<Playlist_Title>/<Video_Title>.md, ...
 uniextract -i "https://youtube.com/playlist?list=PLxxx" -o output/
 ```
+
+Output files from YouTube are named by **video title** (e.g. `How_to_Learn_Chess.md`).
+
+**Re-run safety:** playlist extraction skips videos whose output files already exist, so you can safely re-run after interruptions or failures without re-downloading.
 
 ## Configuration
 
