@@ -51,9 +51,16 @@ class ExtractorRegistry:
         return None
 
     def get_for_url(self, url: str) -> BaseExtractor | None:
-        """Find an extractor for the given URL by pattern matching."""
+        """Find an extractor for the given URL by pattern matching.
+
+        Longer (more specific) patterns are checked first so that e.g.
+        'youtube.com' wins over 'https://' for YouTube URLs.
+        """
         url_lower = url.lower()
-        for pattern, extractor in self._by_url_pattern.items():
+        # Sort by pattern length descending so specific patterns match first
+        for pattern, extractor in sorted(
+            self._by_url_pattern.items(), key=lambda item: len(item[0]), reverse=True
+        ):
             if pattern in url_lower:
                 return extractor
         return None

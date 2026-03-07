@@ -44,7 +44,8 @@ class TestCLI:
         result = run_cli("-i", str(FIXTURES), "-o", str(tmp_path))
         assert result.returncode == 0
         assert "Processed:" in result.stdout
-        output_files = list(tmp_path.glob("*.md"))
+        # Batch now writes into a subdirectory named after the input dir
+        output_files = list(tmp_path.rglob("*.md"))
         assert len(output_files) >= 2  # sample.txt and sample.md at minimum
 
     def test_extract_txt_format(self, tmp_path):

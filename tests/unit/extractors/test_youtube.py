@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from universal_extractor.core.base import ExtractionError
+from universal_extractor.core.base import ExtractionError, ExtractionResult
 from universal_extractor.extractors.youtube import CircuitBreaker, YouTubeExtractor
 
 
@@ -50,18 +50,18 @@ class TestYouTubeExtractor:
             self.ext._extract_video_id("https://example.com")
 
     def test_tier1_success(self):
-        """Test tier 1 with mocked youtube-transcript-api."""
-        mock_entry = MagicMock()
-        mock_entry.text = "Hello world"
-
+        """Test tier 1 with mocked youtube-transcript-api v1.x."""
         mock_transcript = MagicMock()
-        mock_transcript.fetch.return_value = [mock_entry]
+        mock_transcript.fetch.return_value = [{"text": "Hello world"}]
 
         mock_transcript_list = MagicMock()
         mock_transcript_list.find_manually_created_transcript.return_value = mock_transcript
 
+        mock_api_instance = MagicMock()
+        mock_api_instance.list.return_value = mock_transcript_list
+
         mock_api = MagicMock()
-        mock_api.YouTubeTranscriptApi.list_transcripts.return_value = mock_transcript_list
+        mock_api.YouTubeTranscriptApi.return_value = mock_api_instance
 
         with patch.dict(sys.modules, {"youtube_transcript_api": mock_api}):
             result = self.ext._tier1_transcript_api("dQw4w9WgXcQ")
@@ -89,3 +89,107 @@ class TestYouTubeExtractor:
 
             with pytest.raises(ExtractionError, match="All extraction tiers failed"):
                 ext.extract("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+
+    def test_is_playlist(self):
+        assert YouTubeExtractor.is_playlist(
+            "https://www.youtube.com/playlist?list=PLxxxxxxx"
+        )
+        assert not YouTubeExtractor.is_playlist(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        )
+        assert not YouTubeExtractor.is_playlist(
+            "https://www.youtube.com/watch?v=abc&list=PLxxx"
+        )
+
+    def test_get_playlist_info(self):
+        """Test playlist info extraction with mocked yt-dlp."""
+        mock_ydl_instance = MagicMock()
+        mock_ydl_instance.__enter__ = MagicMock(return_value=mock_ydl_instance)
+        mock_ydl_instance.__exit__ = MagicMock(return_value=False)
+        mock_ydl_instance.extract_info.return_value = {
+            "title": "My Playlist",
+            "entries": [
+                {"url": "abc123", "webpage_url": "https://www.youtube.com/watch?v=abc123"},
+                {"url": "def456", "webpage_url": "https://www.youtube.com/watch?v=def456"},
+            ],
+        }
+
+        mock_yt_dlp = MagicMock()
+        mock_yt_dlp.YoutubeDL.return_value = mock_ydl_instance
+
+        with patch.dict(sys.modules, {"yt_dlp": mock_yt_dlp}):
+            ext = YouTubeExtractor(languages=["en"])
+            title, urls = ext.get_playlist_info(
+                "https://www.youtube.com/playlist?list=PLxxx"
+            )
+
+        assert title == "My Playlist"
+        assert len(urls) == 2
+        assert "abc123" in urls[0]
+
+    def test_get_playlist_info_empty(self):
+        """Empty playlist raises ExtractionError."""
+        mock_ydl_instance = MagicMock()
+        mock_ydl_instance.__enter__ = MagicMock(return_value=mock_ydl_instance)
+        mock_ydl_instance.__exit__ = MagicMock(return_value=False)
+        mock_ydl_instance.extract_info.return_value = {
+            "title": "Empty",
+            "entries": [],
+        }
+
+        mock_yt_dlp = MagicMock()
+        mock_yt_dlp.YoutubeDL.return_value = mock_ydl_instance
+
+        with patch.dict(sys.modules, {"yt_dlp": mock_yt_dlp}):
+            ext = YouTubeExtractor(languages=["en"])
+            with pytest.raises(ExtractionError, match="No accessible videos"):
+                ext.get_playlist_info(
+                    "https://www.youtube.com/playlist?list=PLxxx"
+                )
+
+    def test_extract_playlist(self):
+        """Test extract_playlist iterates over videos."""
+        ext = YouTubeExtractor(languages=["en"])
+
+        mock_result = ExtractionResult(
+            text="transcript",
+            source="https://www.youtube.com/watch?v=abc",
+            source_type="youtube",
+            extractor_name="YouTubeExtractor",
+        )
+
+        with patch.object(ext, "get_playlist_info") as mock_info, \
+             patch.object(ext, "extract") as mock_extract:
+            mock_info.return_value = ("Test Playlist", [
+                "https://www.youtube.com/watch?v=abc",
+                "https://www.youtube.com/watch?v=def",
+            ])
+            mock_extract.return_value = mock_result
+
+            title, results = ext.extract_playlist(
+                "https://www.youtube.com/playlist?list=PLxxx"
+            )
+
+        assert title == "Test Playlist"
+        assert len(results) == 2
+        assert mock_extract.call_count == 2
+
+    def test_extract_playlist_partial_failure(self):
+        """Playlist extraction continues when individual videos fail."""
+        ext = YouTubeExtractor(languages=["en"])
+
+        ok_result = ExtractionResult(
+            text="ok", source="url1", source_type="youtube",
+            extractor_name="YouTubeExtractor",
+        )
+
+        with patch.object(ext, "get_playlist_info") as mock_info, \
+             patch.object(ext, "extract") as mock_extract:
+            mock_info.return_value = ("PL", ["url1", "url2"])
+            mock_extract.side_effect = [ok_result, Exception("fail")]
+
+            title, results = ext.extract_playlist("https://youtube.com/playlist?list=X")
+
+        assert len(results) == 2
+        assert results[0].text == "ok"
+        assert results[1].error == "fail"

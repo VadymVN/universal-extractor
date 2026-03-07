@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 
 from .config import Config
@@ -65,6 +66,16 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["md", "txt", "json"],
         default="md",
         help="Output format: md (default), txt, or json",
+    )
+    parser.add_argument(
+        "--cookies",
+        nargs="?",
+        const="auto",
+        default=None,
+        metavar="BROWSER",
+        help="Use cookies from browser for private playlists. "
+             "Without value: auto-detect browser. "
+             "With value: use specified browser (safari, chrome, firefox, etc.)",
     )
     parser.add_argument(
         "-v", "--verbose",
@@ -194,6 +205,15 @@ def run(args: argparse.Namespace) -> int:
         config_kwargs["whisper_language"] = args.language
     if args.no_whisper:
         config_kwargs["enable_whisper"] = False
+    if args.cookies == "auto":
+        from .utils.browser import detect_default_browser
+        browser = detect_default_browser()
+        if browser:
+            config_kwargs["cookies_from_browser"] = browser
+        else:
+            config_kwargs["cookies_from_browser"] = None
+    elif args.cookies:
+        config_kwargs["cookies_from_browser"] = args.cookies
 
     config = Config.from_env(**config_kwargs)
 
@@ -202,6 +222,13 @@ def run(args: argparse.Namespace) -> int:
 
     stdin_mode = _is_stdin_mode(args)
     stdout_mode = _is_stdout_mode(args)
+
+    if args.cookies == "auto":
+        browser = config.cookies_from_browser
+        if browser:
+            _status(f"Using cookies from: {browser}", stdout_mode)
+        else:
+            _status("Warning: could not detect browser for cookies", stdout_mode)
 
     # Build registry and router
     registry = ExtractorRegistry()
@@ -244,18 +271,129 @@ def run(args: argparse.Namespace) -> int:
         dry_run(source, registry)
         return 0
 
-    # Classify input
-    try:
-        input_type = router.classify(source)
-    except ExtractionError as e:
-        print(f"Error: {e}", file=sys.stderr)
-        return 1
+    # Check for playlist before classifying
+    is_playlist = router.is_playlist(source)
+
+    if not is_playlist:
+        try:
+            input_type = router.classify(source)
+        except ExtractionError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
 
     # Process
-    if input_type == "directory" or args.batch:
+    if is_playlist:
+        # YouTube playlist
         from tqdm import tqdm
+
+        from .extractors.youtube import YouTubeExtractor, _PLAYLIST_DELAY_SECONDS
+
+        _status("Fetching playlist info...", stdout_mode)
+        yt_extractor = YouTubeExtractor(
+            languages=config.youtube_languages,
+            enable_whisper=config.enable_whisper,
+            whisper_model=config.whisper_model,
+            cookies_from_browser=config.cookies_from_browser,
+        )
+        try:
+            title, videos = yt_extractor.get_playlist_info(source)
+        except ExtractionError:
+            # If no cookies were set, auto-detect browser and retry
+            if not config.cookies_from_browser:
+                from .utils.browser import detect_default_browser
+
+                browser = detect_default_browser()
+                if browser:
+                    _status(f"Retrying with cookies from: {browser}", stdout_mode)
+                    yt_extractor = YouTubeExtractor(
+                        languages=config.youtube_languages,
+                        enable_whisper=config.enable_whisper,
+                        whisper_model=config.whisper_model,
+                        cookies_from_browser=browser,
+                    )
+                    try:
+                        title, videos = yt_extractor.get_playlist_info(source)
+                    except ExtractionError as e2:
+                        print(f"Error: {e2}", file=sys.stderr)
+                        return 1
+                else:
+                    print(
+                        "Error: Playlist unavailable. Try --cookies BROWSER for private playlists.",
+                        file=sys.stderr,
+                    )
+                    return 1
+            else:
+                print(
+                    f"Error: Playlist unavailable (tried cookies from {config.cookies_from_browser})",
+                    file=sys.stderr,
+                )
+                return 1
+
+        _status(f"Playlist: {title} ({len(videos)} videos)", stdout_mode)
+        results = []
+
+        # Build set of existing files in the target subdir to skip re-extraction
+        existing_files: set[str] = set()
+        if not stdout_mode:
+            from .utils.sanitize import sanitize_filename as _sanitize
+            safe_title = _sanitize(title)
+            assert writer is not None
+            subdir = writer.output_dir / safe_title
+            if subdir.exists():
+                existing_files = {f.stem for f in subdir.iterdir() if f.is_file()}
+
+        ext = {"md": ".md", "txt": ".txt", "json": ".json"}.get(args.format, ".md")
+        skipped = 0
+
+        try:
+            for i, (video_url, video_title) in enumerate(tqdm(videos, desc="Transcribing", unit="video")):
+                # Skip if output file already exists
+                if existing_files and video_title:
+                    expected_stem = _sanitize(video_title)
+                    if expected_stem in existing_files:
+                        _status(f"  Skipping (exists): {video_title}", stdout_mode)
+                        skipped += 1
+                        continue
+
+                if i > 0:
+                    time.sleep(_PLAYLIST_DELAY_SECONDS)
+                try:
+                    result = yt_extractor.extract(video_url, title_hint=video_title)
+                    results.append(result)
+                    report.add(result)
+                except KeyboardInterrupt:
+                    raise
+                except Exception as e:
+                    err_result = ExtractionResult(
+                        text="", source=video_url, source_type="youtube",
+                        extractor_name="YouTubeExtractor", error=str(e),
+                    )
+                    results.append(err_result)
+                    report.add(err_result)
+        except KeyboardInterrupt:
+            _status("\nInterrupted. Saving completed results...", stdout_mode)
+
+        if skipped:
+            _status(f"Skipped {skipped} already extracted video(s)", stdout_mode)
+
+        if stdout_mode:
+            for result in results:
+                if result.error and not result.text:
+                    continue
+                sys.stdout.write(_render_result(result, args.format) + "\n")
+        elif results:
+            assert writer is not None
+            subdir, paths = writer.write_batch_to_subdir(results, title)
+            _status(f"\nOutput: {subdir}", stdout_mode)
+
+        _status(f"\n{report.summary()}", stdout_mode)
+
+    elif input_type == "directory" or args.batch:
+        from tqdm import tqdm
+
         results = []
         dir_path = Path(source)
+        dir_name = dir_path.name or "batch"
         files = [f for f in sorted(dir_path.rglob("*")) if f.is_file() and registry.get(str(f))]
 
         for file_path in tqdm(files, desc="Extracting", unit="file"):
@@ -278,10 +416,10 @@ def run(args: argparse.Namespace) -> int:
                 sys.stdout.write(_render_result(result, args.format) + "\n")
         else:
             assert writer is not None
-            writer.write_batch(results)
+            subdir, paths = writer.write_batch_to_subdir(results, dir_name)
+            _status(f"\nOutput: {subdir}", stdout_mode)
+
         _status(f"\n{report.summary()}", stdout_mode)
-        if not stdout_mode and writer:
-            _status(f"\nOutput: {writer.output_dir}", stdout_mode)
     else:
         # Single file or URL
         try:

@@ -112,6 +112,31 @@ class TestOutputWriter:
         assert len(paths) == 0
 
 
+    def test_write_batch_to_subdir(self, tmp_path, sample_result):
+        writer = OutputWriter(str(tmp_path))
+        subdir, paths = writer.write_batch_to_subdir(
+            [sample_result, sample_result], "My Playlist"
+        )
+        assert subdir.name == "My_Playlist"
+        assert subdir.exists()
+        assert len(paths) == 2
+        for p in paths:
+            assert subdir in p.parents or p.parent == subdir
+
+    def test_write_batch_to_subdir_skips_failed(self, tmp_path):
+        writer = OutputWriter(str(tmp_path))
+        failed = ExtractionResult(
+            text="", source="bad.pdf", source_type="pdf",
+            extractor_name="X", error="fail",
+        )
+        ok = ExtractionResult(
+            text="content", source="good.txt", source_type="txt",
+            extractor_name="X",
+        )
+        subdir, paths = writer.write_batch_to_subdir([failed, ok], "batch")
+        assert len(paths) == 1
+
+
 class TestBatchReport:
     def test_report_counts(self):
         report = BatchReport()

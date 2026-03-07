@@ -18,6 +18,7 @@ __version__ = "0.2.0"
 __all__ = [
     "extract",
     "extract_batch",
+    "extract_playlist",
     "save_result",
     "Config",
     "ExtractionResult",
@@ -53,6 +54,20 @@ def extract_batch(
     """
     router = _build_router(config)
     return router.extract_directory(directory)
+
+
+def extract_playlist(
+    url: str, config: Config | None = None
+) -> tuple[str, list[ExtractionResult]]:
+    """Extract transcripts from all videos in a YouTube playlist.
+
+    Returns (playlist_title, [ExtractionResult, ...]).
+
+    >>> from universal_extractor import extract_playlist
+    >>> title, results = extract_playlist("https://youtube.com/playlist?list=PLxxx")
+    """
+    router = _build_router(config)
+    return router.extract_playlist(url)
 
 
 def save_result(

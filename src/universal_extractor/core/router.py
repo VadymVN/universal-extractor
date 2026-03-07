@@ -49,10 +49,30 @@ class InputRouter:
             source=source,
         )
 
+    def is_playlist(self, source: str) -> bool:
+        """Check if source is a YouTube playlist URL."""
+        from ..extractors.youtube import YouTubeExtractor
+
+        return is_url(source) and YouTubeExtractor.is_playlist(source)
+
     def extract(self, source: str) -> ExtractionResult:
         """Extract text from a single source."""
         extractor = self.resolve_extractor(source)
         return extractor.extract(source)
+
+    def extract_playlist(self, source: str) -> tuple[str, list[ExtractionResult]]:
+        """Extract all videos from a YouTube playlist.
+
+        Returns (playlist_title, [ExtractionResult, ...]).
+        """
+        from ..extractors.youtube import YouTubeExtractor
+
+        if not self.is_playlist(source):
+            raise ExtractionError(
+                f"Source is not a YouTube playlist URL: {source}", source=source
+            )
+        extractor = YouTubeExtractor()
+        return extractor.extract_playlist(source)
 
     def extract_directory(self, directory: str) -> list[ExtractionResult]:
         """Extract text from all supported files in a directory (recursive)."""

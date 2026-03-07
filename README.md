@@ -13,10 +13,11 @@ A single, extensible tool that replaces per-project extraction scripts with a un
 - **Plain text** with automatic encoding detection (UTF-8 → chardet → latin-1)
 - **Web pages** via trafilatura
 - **YouTube** transcripts with 3-tier fallback (transcript API → yt-dlp subs → Whisper)
+- **YouTube playlists** — transcribe all videos from a playlist into a named subdirectory
 - **Video/Audio** transcription via OpenAI Whisper (MPS/CUDA/CPU auto-detection)
 - **Pipe support** — read from stdin (`-i -`) and write to stdout (`-o -`)
 - YAML-style metadata headers in output files
-- Batch processing with progress bars
+- Batch processing with progress bars — directory and playlist results saved to subdirectories
 - Dry-run mode for previewing
 - Graceful dependency degradation (missing whisper just disables video extraction)
 
@@ -44,6 +45,9 @@ uniextract -i ./documents/ -o ./results/
 
 # YouTube video
 uniextract -i "https://youtube.com/watch?v=dQw4w9WgXcQ"
+
+# YouTube playlist (all videos → output/Playlist_Name/)
+uniextract -i "https://youtube.com/playlist?list=PLxxxxxxx"
 
 # Web page
 uniextract -i "https://example.com/article"
@@ -82,17 +86,21 @@ cat document.txt | uniextract -o -
 ## Python API
 
 ```python
-from universal_extractor import extract, extract_batch, save_result
+from universal_extractor import extract, extract_batch, extract_playlist, save_result
 
 # Single file
 result = extract("document.pdf")
 print(result.text)
 print(result.char_count)
 
-# Batch
+# Batch (directory)
 results = extract_batch("./documents/")
 for r in results:
     print(f"{r.source}: {r.char_count} chars")
+
+# YouTube playlist
+title, results = extract_playlist("https://youtube.com/playlist?list=PLxxxxxxx")
+print(f"Playlist: {title}, {len(results)} videos")
 
 # Save with metadata header (default: markdown)
 save_result(result, "output/")
@@ -137,6 +145,21 @@ Author: John Doe
 ---
 
 [extracted content here]
+```
+
+## Output Structure
+
+Single file or URL extraction saves directly to the output directory. Batch (directory) and playlist extraction create a **named subdirectory**:
+
+```
+# Single file → output/document.md
+uniextract -i document.pdf -o output/
+
+# Directory → output/<dir_name>/file1.md, file2.md, ...
+uniextract -i ./lectures/ -o output/
+
+# Playlist → output/<Playlist_Title>/video1.md, video2.md, ...
+uniextract -i "https://youtube.com/playlist?list=PLxxx" -o output/
 ```
 
 ## Configuration

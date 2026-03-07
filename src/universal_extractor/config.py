@@ -23,6 +23,7 @@ class Config:
     log_level: str = "INFO"
     output_dir: str = "output"
     output_format: str = "md"
+    cookies_from_browser: str | None = None
 
     @classmethod
     def from_env(cls, **overrides: object) -> Config:
