@@ -60,8 +60,16 @@ class InputRouter:
         extractor = self.resolve_extractor(source)
         return extractor.extract(source)
 
-    def extract_playlist(self, source: str) -> tuple[str, list[ExtractionResult]]:
+    def extract_playlist(
+        self,
+        source: str,
+        skip_urls: set[str] | None = None,
+    ) -> tuple[str, list[ExtractionResult]]:
         """Extract all videos from a YouTube playlist.
+
+        Args:
+            source: YouTube playlist URL.
+            skip_urls: Set of video URLs to skip (e.g. already processed).
 
         Returns (playlist_title, [ExtractionResult, ...]).
         """
@@ -72,7 +80,7 @@ class InputRouter:
                 f"Source is not a YouTube playlist URL: {source}", source=source
             )
         extractor = YouTubeExtractor()
-        return extractor.extract_playlist(source)
+        return extractor.extract_playlist(source, skip_urls=skip_urls)
 
     def extract_directory(self, directory: str) -> list[ExtractionResult]:
         """Extract text from all supported files in a directory (recursive)."""

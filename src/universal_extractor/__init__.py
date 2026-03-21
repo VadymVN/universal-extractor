@@ -57,9 +57,16 @@ def extract_batch(
 
 
 def extract_playlist(
-    url: str, config: Config | None = None
+    url: str,
+    config: Config | None = None,
+    skip_urls: set[str] | None = None,
 ) -> tuple[str, list[ExtractionResult]]:
     """Extract transcripts from all videos in a YouTube playlist.
+
+    Args:
+        url: YouTube playlist URL.
+        config: Optional extraction config.
+        skip_urls: Set of video URLs to skip (e.g. already processed).
 
     Returns (playlist_title, [ExtractionResult, ...]).
 
@@ -67,7 +74,7 @@ def extract_playlist(
     >>> title, results = extract_playlist("https://youtube.com/playlist?list=PLxxx")
     """
     router = _build_router(config)
-    return router.extract_playlist(url)
+    return router.extract_playlist(url, skip_urls=skip_urls)
 
 
 def save_result(

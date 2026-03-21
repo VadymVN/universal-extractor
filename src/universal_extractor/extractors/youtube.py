@@ -157,17 +157,30 @@ class YouTubeExtractor(BaseExtractor):
 
         return title, videos
 
-    def extract_playlist(self, url: str) -> tuple[str, list[ExtractionResult]]:
+    def extract_playlist(
+        self,
+        url: str,
+        skip_urls: set[str] | None = None,
+    ) -> tuple[str, list[ExtractionResult]]:
         """Extract transcripts from all videos in a playlist.
+
+        Args:
+            url: YouTube playlist URL.
+            skip_urls: Set of video URLs to skip (e.g. already processed).
 
         Returns (playlist_title, [ExtractionResult, ...]).
         Failed videos are included with error field set.
+        Skipped videos are NOT included in results.
         """
         title, videos = self.get_playlist_info(url)
         results: list[ExtractionResult] = []
+        _skip = skip_urls or set()
 
         for i, (video_url, video_title) in enumerate(videos):
-            if i > 0:
+            if video_url in _skip:
+                logger.debug("Skipping already-known video: %s", video_url)
+                continue
+            if results:
                 time.sleep(_PLAYLIST_DELAY_SECONDS)
             try:
                 result = self.extract(video_url, title_hint=video_title)
@@ -180,6 +193,7 @@ class YouTubeExtractor(BaseExtractor):
                         source=video_url,
                         source_type="youtube",
                         extractor_name=self.__class__.__name__,
+                        metadata={"Title": video_title} if video_title else {},
                         error=str(e),
                     )
                 )
