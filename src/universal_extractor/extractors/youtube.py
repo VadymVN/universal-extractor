@@ -219,10 +219,13 @@ class YouTubeExtractor(BaseExtractor):
 
             opts = self._ytdlp_base_opts()
             opts["skip_download"] = True
-            opts["extract_flat"] = True
+            # noplaylist ignores &list=... so single-video URLs resolve to the
+            # video (not the playlist pointer). extract_flat would short-circuit
+            # to a flat URL entry with title=None on such URLs.
+            opts["noplaylist"] = True
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
-                return info.get("title", "")
+                return info.get("title") or ""
         except Exception:
             return ""
 
