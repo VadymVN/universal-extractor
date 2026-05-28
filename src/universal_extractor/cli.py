@@ -28,8 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "-o", "--output",
-        default="output",
-        help="Output directory (default: ./output/). Use '-' for stdout.",
+        default=None,
+        help="Output directory (default: from config or ./output/). Use '-' for stdout.",
     )
     parser.add_argument(
         "-b", "--batch",
@@ -217,6 +217,10 @@ def run(args: argparse.Namespace) -> int:
 
     config = Config.from_env(**config_kwargs)
 
+    # Resolve output: CLI flag > config (env/.env) > default "output"
+    if args.output is None:
+        args.output = config.output_dir
+
     log_level = "DEBUG" if args.verbose else config.log_level
     setup_logging(log_level)
 
@@ -288,6 +292,7 @@ def run(args: argparse.Namespace) -> int:
 
         from .extractors.youtube import (
             _PLAYLIST_DELAY_SECONDS,
+            RateLimitError,
             YouTubeExtractor,
         )
 
@@ -366,10 +371,32 @@ def run(args: argparse.Namespace) -> int:
                     report.add(result)
                 except KeyboardInterrupt:
                     raise
+                except RateLimitError as e:
+                    # YouTube blocked the IP — remaining videos would fail the
+                    # same way. Record this one and stop instead of hammering.
+                    err_result = ExtractionResult(
+                        text="", source=video_url, source_type="youtube",
+                        extractor_name="YouTubeExtractor",
+                        metadata={"Title": video_title} if video_title else {},
+                        error=f"RateLimitError: {e}",
+                    )
+                    results.append(err_result)
+                    report.add(err_result)
+                    remaining = len(videos) - i - 1
+                    _status(
+                        f"\nRate-limited at video {i+1}/{len(videos)} — aborting "
+                        f"({remaining} remaining). Re-run later (or rotate IP) to "
+                        f"resume; skip-existing will keep what was saved.",
+                        stdout_mode,
+                    )
+                    pbar.close()
+                    break
                 except Exception as e:
                     err_result = ExtractionResult(
                         text="", source=video_url, source_type="youtube",
-                        extractor_name="YouTubeExtractor", error=str(e),
+                        extractor_name="YouTubeExtractor",
+                        metadata={"Title": video_title} if video_title else {},
+                        error=str(e),
                     )
                     results.append(err_result)
                     report.add(err_result)
@@ -447,6 +474,10 @@ def run(args: argparse.Namespace) -> int:
 
 def main() -> None:
     """Entry point."""
+    from dotenv import load_dotenv
+
+    load_dotenv()
+
     parser = build_parser()
     args = parser.parse_args()
 
