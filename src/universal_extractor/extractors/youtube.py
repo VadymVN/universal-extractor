@@ -16,12 +16,32 @@ logger = logging.getLogger(__name__)
 _ytdlp_logger = logging.getLogger("yt_dlp.quiet")
 _ytdlp_logger.setLevel(logging.CRITICAL)
 
-# Delay between consecutive YouTube requests to avoid 429 rate limiting
-_PLAYLIST_DELAY_SECONDS = 6.0
+# Delay between consecutive YouTube transcript requests to avoid 429 / IpBlocked.
+# Empirically (May 2026): 6s pace triggered IpBlocked after ~15 videos on anonymous
+# residential IP; 15s pace tested clean for sustained playlist extraction.
+# YouTube does not publish official rate limits for the timedtext endpoint —
+# this value is the result of empirical calibration, not a documented quota.
+_PLAYLIST_DELAY_SECONDS = 15.0
 
 # Retry settings for Tier 1 transcript fetch under rate limiting
 _TIER1_FETCH_RETRIES = 3
 _TIER1_FETCH_BACKOFF = 5.0
+
+# Exception names that signal a hard YouTube rate-limit / IP block (won't clear
+# in seconds — caller should stop hammering, not retry).
+_RATE_LIMIT_EXC_NAMES = frozenset({"IpBlocked", "RequestBlocked", "TooManyRequests"})
+
+
+class RateLimitError(ExtractionError):
+    """YouTube rate-limited / IP-blocked the caller. Back off, don't retry."""
+
+
+def _is_rate_limit(exc: BaseException) -> bool:
+    """Return True if `exc` indicates a YouTube IP/rate block (Tier 1 or Tier 2)."""
+    if type(exc).__name__ in _RATE_LIMIT_EXC_NAMES:
+        return True
+    msg = str(exc).lower()
+    return "http error 429" in msg or "too many requests" in msg
 
 
 class CircuitBreaker:
@@ -185,6 +205,21 @@ class YouTubeExtractor(BaseExtractor):
             try:
                 result = self.extract(video_url, title_hint=video_title)
                 results.append(result)
+            except RateLimitError as e:
+                # IP-blocked — remaining videos would fail the same way.
+                # Record this one and stop (partial results returned).
+                logger.error("Rate-limited at %s: %s", video_url, e)
+                results.append(
+                    ExtractionResult(
+                        text="",
+                        source=video_url,
+                        source_type="youtube",
+                        extractor_name=self.__class__.__name__,
+                        metadata={"Title": video_title} if video_title else {},
+                        error=f"RateLimitError: {e}",
+                    )
+                )
+                break
             except Exception as e:
                 logger.error("Failed to extract %s: %s", video_url, e)
                 results.append(
@@ -231,13 +266,19 @@ class YouTubeExtractor(BaseExtractor):
 
     @staticmethod
     def _fetch_with_retry(transcript) -> list:
-        """Fetch transcript with exponential backoff on rate limiting."""
+        """Fetch transcript with exponential backoff on transient errors.
+
+        Hard IP blocks (IpBlocked/RequestBlocked/TooManyRequests) don't clear in
+        seconds — short-circuit instead of wasting 35s on futile retries.
+        """
         last_exc = None
         for attempt in range(_TIER1_FETCH_RETRIES + 1):
             try:
                 return transcript.fetch()
             except Exception as e:
                 last_exc = e
+                if _is_rate_limit(e):
+                    raise
                 if attempt < _TIER1_FETCH_RETRIES:
                     wait = _TIER1_FETCH_BACKOFF * (2 ** attempt)
                     logger.debug("Tier 1 fetch blocked, retrying in %.1fs...", wait)
@@ -245,11 +286,17 @@ class YouTubeExtractor(BaseExtractor):
         raise last_exc  # type: ignore[misc]
 
     def _tier1_transcript_api(self, video_id: str) -> str | None:
-        """Tier 1: youtube-transcript-api (v1.x API)."""
+        """Tier 1: youtube-transcript-api (v1.x API).
+
+        Stores real failure cause in self._last_tier_errors[1].
+        Raises RateLimitError on hard IP block (don't fall through to Tier 2 —
+        it'd hit the same block).
+        """
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
         except ImportError:
             logger.debug("youtube-transcript-api not installed, skipping tier 1")
+            self._last_tier_errors[1] = "youtube-transcript-api not installed"
             return None
 
         try:
@@ -267,7 +314,9 @@ class YouTubeExtractor(BaseExtractor):
                     )
                     logger.info("Tier 1 (manual subs, %s): success", lang)
                     return text
-                except Exception:
+                except Exception as e:
+                    if _is_rate_limit(e):
+                        raise
                     continue
 
             # Try auto-generated
@@ -281,7 +330,9 @@ class YouTubeExtractor(BaseExtractor):
                     )
                     logger.info("Tier 1 (auto subs, %s): success", lang)
                     return text
-                except Exception:
+                except Exception as e:
+                    if _is_rate_limit(e):
+                        raise
                     continue
 
             # Try any available transcript
@@ -294,10 +345,22 @@ class YouTubeExtractor(BaseExtractor):
                     )
                     logger.info("Tier 1 (any language): success")
                     return text
-            except Exception:
-                pass
+            except Exception as e:
+                if _is_rate_limit(e):
+                    raise
+                # else: no transcript available in any language
 
+            self._last_tier_errors[1] = "no usable transcript found"
         except Exception as e:
+            if _is_rate_limit(e):
+                self._last_tier_errors[1] = type(e).__name__
+                logger.debug("Tier 1 rate-limited: %s", type(e).__name__)
+                raise RateLimitError(
+                    f"YouTube rate-limited at Tier 1: {type(e).__name__}",
+                    source=video_id,
+                    cause=e,
+                ) from e
+            self._last_tier_errors[1] = f"{type(e).__name__}: {str(e)[:120]}"
             logger.debug("Tier 1 failed: %s", e)
 
         return None
@@ -373,6 +436,15 @@ class YouTubeExtractor(BaseExtractor):
 
         except Exception as e:
             self._yt_dlp_breaker.record_failure()
+            if _is_rate_limit(e):
+                self._last_tier_errors[2] = f"{type(e).__name__} (HTTP 429)"
+                logger.debug("Tier 2 rate-limited: %s", e)
+                raise RateLimitError(
+                    f"YouTube rate-limited at Tier 2: {type(e).__name__}",
+                    source=url,
+                    cause=e,
+                ) from e
+            self._last_tier_errors[2] = f"{type(e).__name__}: {str(e)[:120]}"
             logger.debug("Tier 2 failed: %s", e)
 
         return None
@@ -414,16 +486,21 @@ class YouTubeExtractor(BaseExtractor):
         return model
 
     def _tier3_whisper(self, url: str) -> str | None:
-        """Tier 3: Download audio and transcribe with Whisper."""
+        """Tier 3: Download audio and transcribe with Whisper.
+
+        Stores real failure cause in self._last_tier_errors[3].
+        """
         if not self.enable_whisper:
             logger.debug("Whisper disabled, skipping tier 3")
+            self._last_tier_errors[3] = "whisper disabled"
             return None
 
         try:
             import whisper  # noqa: F401
             import yt_dlp
-        except ImportError:
+        except ImportError as e:
             logger.debug("whisper/yt-dlp not installed, skipping tier 3")
+            self._last_tier_errors[3] = f"import failed: {e}"
             return None
 
         try:
@@ -447,6 +524,7 @@ class YouTubeExtractor(BaseExtractor):
 
                 audio_files = glob.glob(f"{tmp_dir}/audio*")
                 if not audio_files:
+                    self._last_tier_errors[3] = "audio download produced no file"
                     return None
 
                 logger.info("Tier 3: transcribing with Whisper...")
@@ -457,8 +535,18 @@ class YouTubeExtractor(BaseExtractor):
                 if text:
                     logger.info("Tier 3 (Whisper): success")
                     return text
+                self._last_tier_errors[3] = "whisper returned empty text"
 
         except Exception as e:
+            if _is_rate_limit(e):
+                self._last_tier_errors[3] = f"{type(e).__name__} (HTTP 429)"
+                logger.debug("Tier 3 rate-limited: %s", e)
+                raise RateLimitError(
+                    f"YouTube rate-limited at Tier 3: {type(e).__name__}",
+                    source=url,
+                    cause=e,
+                ) from e
+            self._last_tier_errors[3] = f"{type(e).__name__}: {str(e)[:120]}"
             logger.debug("Tier 3 failed: %s", e)
 
         return None
@@ -471,7 +559,11 @@ class YouTubeExtractor(BaseExtractor):
         if title:
             metadata["Title"] = title
 
-        # Try tiers in order
+        # Reset per-extract error capture (tiers populate via self._last_tier_errors)
+        self._last_tier_errors: dict[int, str] = {}
+
+        # Try tiers in order. RateLimitError (raised on hard IP block) is
+        # propagated immediately — subsequent tiers would hit the same block.
         for tier_num, tier_fn in [
             (1, lambda: self._tier1_transcript_api(video_id)),
             (2, lambda: self._tier2_ytdlp_subs(source)),
@@ -488,7 +580,14 @@ class YouTubeExtractor(BaseExtractor):
                     metadata=metadata,
                 )
 
+        # All tiers exhausted — surface the real per-tier reasons in the error.
+        if self._last_tier_errors:
+            reason = "; ".join(
+                f"T{n}={msg}" for n, msg in sorted(self._last_tier_errors.items())
+            )
+        else:
+            reason = "no transcript available"
         raise ExtractionError(
-            f"All extraction tiers failed for YouTube video: {source}",
+            f"All extraction tiers failed ({reason}): {source}",
             source=source,
         )
