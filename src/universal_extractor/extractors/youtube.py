@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import tempfile
 import time
@@ -23,9 +24,18 @@ _ytdlp_logger.setLevel(logging.CRITICAL)
 # this value is the result of empirical calibration, not a documented quota.
 _PLAYLIST_DELAY_SECONDS = 15.0
 
+# When a rotating residential proxy is configured, every request exits from a
+# different IP, so per-IP request accumulation (the actual cause of IpBlocked) no
+# longer happens — the 15s throttle is unnecessary. Keep a small courtesy delay.
+_PLAYLIST_DELAY_SECONDS_PROXY = 1.0
+
 # Retry settings for Tier 1 transcript fetch under rate limiting
 _TIER1_FETCH_RETRIES = 3
 _TIER1_FETCH_BACKOFF = 5.0
+
+# When proxying, retry the whole Tier-1 fetch on a transient per-IP failure (Google
+# 'sorry' bot-wall, proxy hiccup). Each attempt builds a fresh client → fresh exit IP.
+_TIER1_PROXY_ROTATE_RETRIES = 4
 
 # Exception names that signal a hard YouTube rate-limit / IP block (won't clear
 # in seconds — caller should stop hammering, not retry).
@@ -42,6 +52,57 @@ def _is_rate_limit(exc: BaseException) -> bool:
         return True
     msg = str(exc).lower()
     return "http error 429" in msg or "too many requests" in msg
+
+
+# Transient, IP-specific failures that a fresh rotation IP will likely clear.
+_TRANSIENT_EXC_NAMES = frozenset(
+    {"RetryError", "ProxyError", "ConnectionError", "ConnectTimeout", "ReadTimeout", "SSLError"}
+)
+
+
+def _is_transient_proxy_error(exc: BaseException) -> bool:
+    """Return True for a transient per-IP failure worth retrying on a fresh exit IP:
+    Google 'sorry' bot-wall, proxy connection hiccup, timeout. Deliberately excludes
+    TranscriptsDisabled / NoTranscriptFound (permanent) and hard rate-limits (handled
+    separately via _is_rate_limit)."""
+    if type(exc).__name__ in _TRANSIENT_EXC_NAMES:
+        return True
+    msg = str(exc).lower()
+    return (
+        "/sorry/" in msg
+        or "max retries exceeded" in msg
+        or "unable to connect to proxy" in msg
+    )
+
+
+_rotating_proxy_cls = None
+
+
+def _make_proxy_config(url: str):
+    """Build a youtube-transcript-api proxy config for a rotating proxy `url`.
+
+    Returns a GenericProxyConfig subclass tuned for rotating residential proxies:
+    closes keep-alive connections (so each request gets a fresh exit IP) and retries
+    a few times on a blocked IP (each retry triggers another rotation). Returns None
+    if the library isn't installed.
+    """
+    global _rotating_proxy_cls
+    try:
+        from youtube_transcript_api.proxies import GenericProxyConfig
+    except ImportError:
+        return None
+    if _rotating_proxy_cls is None:
+        class _RotatingResidentialProxy(GenericProxyConfig):
+            @property
+            def prevent_keeping_connections_alive(self) -> bool:
+                return True
+
+            @property
+            def retries_when_blocked(self) -> int:
+                return 3
+
+        _rotating_proxy_cls = _RotatingResidentialProxy
+    return _rotating_proxy_cls(http_url=url, https_url=url)
 
 
 class CircuitBreaker:
@@ -82,13 +143,22 @@ class YouTubeExtractor(BaseExtractor):
         enable_whisper: bool = True,
         whisper_model: str = "base",
         cookies_from_browser: str | None = None,
+        proxy_url: str | None = None,
     ):
         self.languages = languages or ["en", "ru"]
         self.enable_whisper = enable_whisper
         self.whisper_model = whisper_model
         self.cookies_from_browser = cookies_from_browser
+        # Rotating residential proxy (e.g. IPRoyal). Falls back to env so that every
+        # construction path (CLI, registry, router) picks it up without extra wiring.
+        self.proxy_url = proxy_url or os.environ.get("UNIEXTRACT_PROXY_URL") or None
         self._whisper_model_cache = None
         self._has_impersonation = self._check_impersonation()
+
+    @property
+    def playlist_delay(self) -> float:
+        """Delay between videos: short when a rotating proxy is configured."""
+        return _PLAYLIST_DELAY_SECONDS_PROXY if self.proxy_url else _PLAYLIST_DELAY_SECONDS
 
     @staticmethod
     def _check_impersonation() -> bool:
@@ -111,6 +181,13 @@ class YouTubeExtractor(BaseExtractor):
             "max_sleep_interval": 5,
             "sleep_subtitles": 3,
         }
+        # NB: we deliberately do NOT route yt-dlp through the rotating proxy.
+        #   1) Playlist-info and Tier-2 fetches never accumulate enough requests to
+        #      trip IpBlocked — only the per-video Tier-1 transcript calls do, and
+        #      those are proxied separately (in _tier1_transcript_api).
+        #   2) A residential proxy IP gets a bot/consent wall on the playlist page.
+        #   3) curl-cffi impersonation + proxy segfaults the interpreter.
+        # So yt-dlp stays on the direct connection (as it always reliably did).
         if self.cookies_from_browser:
             opts["cookiesfrombrowser"] = (self.cookies_from_browser,)
         if self._has_impersonation:
@@ -201,7 +278,7 @@ class YouTubeExtractor(BaseExtractor):
                 logger.debug("Skipping already-known video: %s", video_url)
                 continue
             if results:
-                time.sleep(_PLAYLIST_DELAY_SECONDS)
+                time.sleep(self.playlist_delay)
             try:
                 result = self.extract(video_url, title_hint=video_title)
                 results.append(result)
@@ -299,69 +376,92 @@ class YouTubeExtractor(BaseExtractor):
             self._last_tier_errors[1] = "youtube-transcript-api not installed"
             return None
 
-        try:
-            ytt_api = YouTubeTranscriptApi()
-            transcript_list = ytt_api.list(video_id)
-
-            # Try manual transcripts first
-            for lang in self.languages:
-                try:
-                    transcript = transcript_list.find_manually_created_transcript([lang])
-                    entries = self._fetch_with_retry(transcript)
-                    text = " ".join(
-                        e.get("text", "") if isinstance(e, dict) else e.text
-                        for e in entries
-                    )
-                    logger.info("Tier 1 (manual subs, %s): success", lang)
-                    return text
-                except Exception as e:
-                    if _is_rate_limit(e):
-                        raise
-                    continue
-
-            # Try auto-generated
-            for lang in self.languages:
-                try:
-                    transcript = transcript_list.find_generated_transcript([lang])
-                    entries = self._fetch_with_retry(transcript)
-                    text = " ".join(
-                        e.get("text", "") if isinstance(e, dict) else e.text
-                        for e in entries
-                    )
-                    logger.info("Tier 1 (auto subs, %s): success", lang)
-                    return text
-                except Exception as e:
-                    if _is_rate_limit(e):
-                        raise
-                    continue
-
-            # Try any available transcript
+        attempts = _TIER1_PROXY_ROTATE_RETRIES if self.proxy_url else 1
+        for attempt in range(attempts):
             try:
-                for transcript in transcript_list:
-                    entries = self._fetch_with_retry(transcript)
-                    text = " ".join(
-                        e.get("text", "") if isinstance(e, dict) else e.text
-                        for e in entries
-                    )
-                    logger.info("Tier 1 (any language): success")
-                    return text
+                proxy_config = _make_proxy_config(self.proxy_url) if self.proxy_url else None
+                ytt_api = (
+                    YouTubeTranscriptApi(proxy_config=proxy_config)
+                    if proxy_config
+                    else YouTubeTranscriptApi()
+                )
+                transcript_list = ytt_api.list(video_id)
+
+                # Try manual transcripts first
+                for lang in self.languages:
+                    try:
+                        transcript = transcript_list.find_manually_created_transcript([lang])
+                        entries = self._fetch_with_retry(transcript)
+                        text = " ".join(
+                            e.get("text", "") if isinstance(e, dict) else e.text
+                            for e in entries
+                        )
+                        logger.info("Tier 1 (manual subs, %s): success", lang)
+                        return text
+                    except Exception as e:
+                        if _is_rate_limit(e):
+                            raise
+                        continue
+
+                # Try auto-generated
+                for lang in self.languages:
+                    try:
+                        transcript = transcript_list.find_generated_transcript([lang])
+                        entries = self._fetch_with_retry(transcript)
+                        text = " ".join(
+                            e.get("text", "") if isinstance(e, dict) else e.text
+                            for e in entries
+                        )
+                        logger.info("Tier 1 (auto subs, %s): success", lang)
+                        return text
+                    except Exception as e:
+                        if _is_rate_limit(e):
+                            raise
+                        continue
+
+                # Try any available transcript
+                try:
+                    for transcript in transcript_list:
+                        entries = self._fetch_with_retry(transcript)
+                        text = " ".join(
+                            e.get("text", "") if isinstance(e, dict) else e.text
+                            for e in entries
+                        )
+                        logger.info("Tier 1 (any language): success")
+                        return text
+                except Exception as e:
+                    if _is_rate_limit(e):
+                        raise
+                    # else: no transcript available in any language
+
+                # list() succeeded but the video has no usable transcript — permanent,
+                # no IP rotation will help, so don't retry.
+                self._last_tier_errors[1] = "no usable transcript found"
+                return None
             except Exception as e:
                 if _is_rate_limit(e):
-                    raise
-                # else: no transcript available in any language
-
-            self._last_tier_errors[1] = "no usable transcript found"
-        except Exception as e:
-            if _is_rate_limit(e):
-                self._last_tier_errors[1] = type(e).__name__
-                logger.debug("Tier 1 rate-limited: %s", type(e).__name__)
-                raise RateLimitError(
-                    f"YouTube rate-limited at Tier 1: {type(e).__name__}",
-                    source=video_id,
-                    cause=e,
-                ) from e
-            self._last_tier_errors[1] = f"{type(e).__name__}: {str(e)[:120]}"
-            logger.debug("Tier 1 failed: %s", e)
+                    self._last_tier_errors[1] = type(e).__name__
+                    logger.debug("Tier 1 rate-limited: %s", type(e).__name__)
+                    raise RateLimitError(
+                        f"YouTube rate-limited at Tier 1: {type(e).__name__}",
+                        source=video_id,
+                        cause=e,
+                    ) from e
+                self._last_tier_errors[1] = f"{type(e).__name__}: {str(e)[:120]}"
+                # Transient per-IP failure (Google 'sorry' wall, proxy hiccup) while
+                # proxying — a fresh rotation IP will likely clear it. Retry.
+                if (
+                    self.proxy_url
+                    and _is_transient_proxy_error(e)
+                    and attempt < attempts - 1
+                ):
+                    logger.info(
+                        "Tier 1 transient error via proxy (%s) — rotating IP, retry %d/%d",
+                        type(e).__name__, attempt + 2, attempts,
+                    )
+                    continue
+                logger.debug("Tier 1 failed: %s", e)
+                return None
 
         return None
 
@@ -562,14 +662,28 @@ class YouTubeExtractor(BaseExtractor):
         # Reset per-extract error capture (tiers populate via self._last_tier_errors)
         self._last_tier_errors: dict[int, str] = {}
 
-        # Try tiers in order. RateLimitError (raised on hard IP block) is
-        # propagated immediately — subsequent tiers would hit the same block.
-        for tier_num, tier_fn in [
-            (1, lambda: self._tier1_transcript_api(video_id)),
-            (2, lambda: self._tier2_ytdlp_subs(source)),
-            (3, lambda: self._tier3_whisper(source)),
-        ]:
-            text = tier_fn()
+        # Tier order. With a rotating proxy, Tier 1 (proxied) is the reliable path;
+        # Tier 2 (yt-dlp) would hit the un-proxied direct IP — often already blocked —
+        # and Tier 3 needs whisper. So skip 2 & 3 when proxying.
+        tiers = [(1, lambda: self._tier1_transcript_api(video_id))]
+        if not self.proxy_url:
+            tiers += [
+                (2, lambda: self._tier2_ytdlp_subs(source)),
+                (3, lambda: self._tier3_whisper(source)),
+            ]
+
+        # RateLimitError (hard IP block) normally propagates to abort the playlist —
+        # correct on a single shared IP. But with a rotating proxy a block is per-IP
+        # and transient: treat it as a per-video miss and let the next video rotate to
+        # a fresh IP, rather than aborting the whole run.
+        for tier_num, tier_fn in tiers:
+            try:
+                text = tier_fn()
+            except RateLimitError:
+                if self.proxy_url:
+                    self._last_tier_errors[tier_num] = "rate-limited via proxy (retries exhausted)"
+                    break
+                raise
             if text:
                 metadata["extraction_tier"] = tier_num
                 return ExtractionResult(

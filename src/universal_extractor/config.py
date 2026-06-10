@@ -24,6 +24,7 @@ class Config:
     output_dir: str = "output"
     output_format: str = "md"
     cookies_from_browser: str | None = None
+    proxy_url: str | None = None
 
     @classmethod
     def from_env(cls, **overrides: object) -> Config:
@@ -37,6 +38,7 @@ class Config:
             "log_level": ("UNIEXTRACT_LOG_LEVEL", str),
             "output_dir": ("UNIEXTRACT_OUTPUT_DIR", str),
             "output_format": ("UNIEXTRACT_OUTPUT_FORMAT", str),
+            "proxy_url": ("UNIEXTRACT_PROXY_URL", str),
         }
 
         kwargs: dict[str, object] = {}

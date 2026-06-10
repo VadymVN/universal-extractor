@@ -23,6 +23,7 @@ env/
 /output/
 DEV_NOTES.md
 .env
+*.local.md
 
 # Testing
 .pytest_cache/

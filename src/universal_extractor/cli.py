@@ -78,6 +78,14 @@ def build_parser() -> argparse.ArgumentParser:
              "With value: use specified browser (safari, chrome, firefox, etc.)",
     )
     parser.add_argument(
+        "--proxy",
+        metavar="URL",
+        default=None,
+        help="Route YouTube requests through a rotating proxy to avoid IP blocks, "
+             "e.g. http://user:pass@proxy-host:port . "
+             "Overrides the UNIEXTRACT_PROXY_URL env var (which can live in .env).",
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable verbose logging",
@@ -214,6 +222,8 @@ def run(args: argparse.Namespace) -> int:
             config_kwargs["cookies_from_browser"] = None
     elif args.cookies:
         config_kwargs["cookies_from_browser"] = args.cookies
+    if args.proxy:
+        config_kwargs["proxy_url"] = args.proxy
 
     config = Config.from_env(**config_kwargs)
 
@@ -291,17 +301,19 @@ def run(args: argparse.Namespace) -> int:
         from tqdm import tqdm
 
         from .extractors.youtube import (
-            _PLAYLIST_DELAY_SECONDS,
             RateLimitError,
             YouTubeExtractor,
         )
 
+        if config.proxy_url:
+            _status("Using rotating proxy for YouTube requests", stdout_mode)
         _status("Fetching playlist info...", stdout_mode)
         yt_extractor = YouTubeExtractor(
             languages=config.youtube_languages,
             enable_whisper=config.enable_whisper,
             whisper_model=config.whisper_model,
             cookies_from_browser=config.cookies_from_browser,
+            proxy_url=config.proxy_url,
         )
         try:
             title, videos = yt_extractor.get_playlist_info(source)
@@ -318,6 +330,7 @@ def run(args: argparse.Namespace) -> int:
                         enable_whisper=config.enable_whisper,
                         whisper_model=config.whisper_model,
                         cookies_from_browser=browser,
+                        proxy_url=config.proxy_url,
                     )
                     try:
                         title, videos = yt_extractor.get_playlist_info(source)
@@ -364,7 +377,7 @@ def run(args: argparse.Namespace) -> int:
                         continue
 
                 if i > 0:
-                    time.sleep(_PLAYLIST_DELAY_SECONDS)
+                    time.sleep(yt_extractor.playlist_delay)
                 try:
                     result = yt_extractor.extract(video_url, title_hint=video_title)
                     results.append(result)

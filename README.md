@@ -52,6 +52,9 @@ uniextract -i "https://youtube.com/playlist?list=PLxxxxxxx"
 # Private playlist (use browser cookies)
 uniextract -i "https://youtube.com/playlist?list=PLxxxxxxx" --cookies chrome
 
+# Large playlist via rotating proxy (avoids YouTube IP blocks / IpBlocked)
+uniextract -i "https://youtube.com/playlist?list=PLxxxxxxx" --proxy "http://user:pass@proxy-host:port"
+
 # Web page
 uniextract -i "https://example.com/article"
 
@@ -83,6 +86,7 @@ cat document.txt | uniextract -o -
 | `--language` | Language hint for transcription |
 | `--no-whisper` | Disable Whisper (skip video/audio) |
 | `--cookies [BROWSER]` | Use browser cookies for private playlists (auto-detect or specify: chrome, firefox, safari) |
+| `--proxy URL` | Route YouTube requests through a rotating proxy to avoid IP blocks. Overrides `UNIEXTRACT_PROXY_URL` |
 | `--dry-run` | Preview what would be processed |
 | `--list-extractors` | Show available extractors |
 | `-v, --verbose` | Enable debug logging |
@@ -185,6 +189,44 @@ Settings can be passed via constructor, environment variables, or defaults:
 | `UNIEXTRACT_LOG_LEVEL` | `INFO` | Logging level |
 | `UNIEXTRACT_OUTPUT_DIR` | `output` | Default output directory |
 | `UNIEXTRACT_OUTPUT_FORMAT` | `md` | Output format: `md`, `txt`, `json` |
+| `UNIEXTRACT_PROXY_URL` | _(none)_ | Rotating proxy URL for YouTube (e.g. `http://user:pass@host:port`). Avoids IP blocks; can live in `.env` |
+
+## Avoiding YouTube IP Blocks
+
+When transcribing large playlists, YouTube may rate-limit or block your IP
+(`IpBlocked` / HTTP 429) after a number of transcript requests. Each video costs two
+requests to YouTube's `timedtext`/InnerTube endpoints, so a single static IP — VPN,
+datacenter, **or even a home residential IP** — accumulates enough requests to get
+flagged. VPN and datacenter IPs are blocked fastest.
+
+The robust fix is a **rotating residential proxy**: every request exits from a different
+residential IP, so no single IP accumulates enough requests to be blocked.
+
+### Setup
+
+1. Get a rotating residential proxy from any provider (e.g.
+   [IPRoyal](https://iproyal.com), [Webshare](https://www.webshare.io)). A small
+   pay-as-you-go plan is plenty — transcripts are text, so ~1 GB covers thousands of
+   videos.
+2. Point the extractor at it, per-run or persistently:
+
+   ```bash
+   # per run
+   uniextract -i "<playlist-url>" --proxy "http://user:pass@proxy-host:port"
+
+   # or persistently via .env (auto-loaded; keep it out of git)
+   echo 'UNIEXTRACT_PROXY_URL=http://user:pass@proxy-host:port' >> .env
+   ```
+
+### Behavior when a proxy is set
+
+- Only the transcript fetch (Tier 1) is proxied — playlist metadata still uses the direct
+  connection (it isn't the part that gets blocked).
+- Transient per-IP failures (e.g. Google's "sorry" bot-wall) are retried automatically on
+  a fresh rotation IP.
+- The inter-video delay drops from 15 s to ~1 s, since rotation removes the need to
+  throttle a single IP.
+- Without a proxy, behavior is unchanged.
 
 ## Development
 
