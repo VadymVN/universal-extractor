@@ -7,7 +7,7 @@ from universal_extractor.config import Config
 class TestConfig:
     def test_defaults(self):
         cfg = Config()
-        assert cfg.whisper_model == "base"
+        assert cfg.whisper_model == "small"
         assert cfg.enable_whisper is True
         assert cfg.web_timeout == 30
         assert cfg.max_workers == 4
