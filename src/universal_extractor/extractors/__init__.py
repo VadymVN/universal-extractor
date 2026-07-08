@@ -6,12 +6,13 @@ import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from ..config import Config
     from ..core.registry import ExtractorRegistry
 
 logger = logging.getLogger(__name__)
 
 
-def register_all(registry: ExtractorRegistry) -> None:
+def register_all(registry: ExtractorRegistry, config: Config | None = None) -> None:
     """Register all available extractors with the registry."""
     from .docx import DocxExtractor
     from .pdf import PDFExtractor
@@ -47,6 +48,12 @@ def register_all(registry: ExtractorRegistry) -> None:
 
     try:
         from .video import VideoExtractor
-        registry.register(VideoExtractor())
+        if config is not None:
+            registry.register(VideoExtractor(
+                model_name=config.whisper_model,
+                language=config.whisper_language,
+            ))
+        else:
+            registry.register(VideoExtractor())
     except ImportError:
-        logger.debug("VideoExtractor unavailable (missing whisper/torch)")
+        logger.debug("VideoExtractor unavailable (missing faster-whisper)")

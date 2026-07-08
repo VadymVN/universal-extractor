@@ -14,7 +14,7 @@ A single, extensible tool that replaces per-project extraction scripts with a un
 - **Web pages** via trafilatura
 - **YouTube** transcripts with 3-tier fallback (transcript API → yt-dlp subs → Whisper)
 - **YouTube playlists** — transcribe all videos from a playlist into a named subdirectory
-- **Video/Audio** transcription via OpenAI Whisper (MPS/CUDA/CPU auto-detection)
+- **Video/Audio** transcription via faster-whisper (CTranslate2; CPU int8, CUDA float16 when available)
 - **Pipe support** — read from stdin (`-i -`) and write to stdout (`-o -`)
 - YAML-style metadata headers in output files
 - Batch processing with progress bars — directory and playlist results saved to subdirectories

@@ -14,7 +14,7 @@ class Config:
     Env vars use the UNIEXTRACT_ prefix.
     """
 
-    whisper_model: str = "base"
+    whisper_model: str = "small"
     whisper_language: str | None = None
     enable_whisper: bool = True
     youtube_languages: list[str] = field(default_factory=lambda: ["en", "ru"])

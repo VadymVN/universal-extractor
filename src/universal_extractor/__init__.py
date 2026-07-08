@@ -29,7 +29,7 @@ __all__ = [
 def _build_router(config: Config | None = None) -> InputRouter:
     """Build a configured router with all available extractors."""
     registry = ExtractorRegistry()
-    register_all(registry)
+    register_all(registry, config)
     return InputRouter(registry)
 
 
