@@ -23,7 +23,7 @@ class TestVideoExtractor:
 
     def test_supported_extensions(self):
         # Video formats
-        for ext in [".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv"]:
+        for ext in [".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"]:
             assert ext in VideoExtractor.supported_extensions
         # Audio formats
         for ext in [".mp3", ".wav", ".m4a", ".flac", ".ogg"]:

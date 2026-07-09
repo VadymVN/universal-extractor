@@ -16,6 +16,11 @@ from ..core.base import BaseExtractor, ExtractionError, ExtractionResult
 
 logger = logging.getLogger(__name__)
 
+# File extensions handled by this extractor (single source of truth so the
+# supported set and the video/audio source_type check never drift apart).
+VIDEO_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv", ".wmv"}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma"}
+
 # Lazy-loaded model (singleton per process, keyed by model name)
 _model = None
 _model_name = None
@@ -58,10 +63,7 @@ def _load_model(model_name: str = "small"):
 class VideoExtractor(BaseExtractor):
     """Transcribes video/audio files using faster-whisper (CTranslate2)."""
 
-    supported_extensions: ClassVar[set[str]] = {
-        ".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv",  # Video
-        ".mp3", ".wav", ".m4a", ".flac", ".ogg", ".aac", ".wma",  # Audio
-    }
+    supported_extensions: ClassVar[set[str]] = VIDEO_EXTENSIONS | AUDIO_EXTENSIONS
     required_packages: ClassVar[set[str]] = {"faster_whisper"}
 
     def __init__(self, model_name: str = "small", language: str | None = None):
@@ -112,10 +114,7 @@ class VideoExtractor(BaseExtractor):
         return ExtractionResult(
             text=text,
             source=source,
-            source_type=(
-                "video" if path.suffix in {".mp4", ".mov", ".avi", ".mkv", ".webm", ".flv"}
-                else "audio"
-            ),
+            source_type="video" if path.suffix.lower() in VIDEO_EXTENSIONS else "audio",
             extractor_name=self.__class__.__name__,
             metadata=metadata,
             language=detected_lang,
